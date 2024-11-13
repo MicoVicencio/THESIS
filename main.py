@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 import threading
+import time
 
 class RFIDLogSystem:
     def __init__(self):
@@ -31,27 +32,24 @@ class RFIDLogSystem:
         self.root = tk.Tk()
         self.root.title("RFID Log System")
         self.root.geometry("1500x800")
-        self.root.configure(bg="#f0f0f0")  # Set background color for the main window
-
-        # Load and add logo to the top-left corner
-        logo_image = Image.open("logo.png")
-        logo_image = logo_image.resize((200, 150), Image.LANCZOS)  # Resize the logo
-        self.logo_photo = ImageTk.PhotoImage(logo_image)
-        self.logo_label = tk.Label(self.root, image=self.logo_photo, bg="#f0f0f0")
-        self.logo_label.grid(row=0, column=0, padx=(10, 0), pady=10, sticky="nsew")
+        self.root.configure(bg="#f0f0f0")
+        self.root.state('zoomed')
 
         # Configure grid layout with weight distribution for full space utilization
-        self.root.grid_rowconfigure(0, weight=0)  # Title row
-        self.root.grid_rowconfigure(1, weight=1)  # Main content rows (Profile and Logs)
-        self.root.grid_columnconfigure(0, weight=1)  # Left column (Profile)
-        self.root.grid_columnconfigure(1, weight=2)  # Center column (Logs area)
-        self.root.grid_columnconfigure(2, weight=1)  # Right column (Time label and additional content)
+        self.root.grid_rowconfigure(0, weight=0)
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=2)
+        self.root.grid_columnconfigure(2, weight=1)
 
-        # Add label for "SMART ELECTRICITY CONTROL SYSTEM" next to the logo
-        self.system_label = tk.Label(self.root, text="SMART ELECTRICITY CONTROL SYSTEM", font=('Arial', 30, 'bold'), bg="#d9eaf5", bd=2, relief="solid", anchor="w")
+        # Load and display the logo in the top-left corner
+        self.load_logo()
+
+        # Add label for "SMART ELECTRICITY CONTROL SYSTEM" next to the seal
+        self.system_label = tk.Label(self.root, text="SMART ELECTRICITY CONTROL SYSTEM - Lab A", font=('Arial', 22, 'bold'), bg="#d9eaf5", bd=2, relief="solid", anchor="w")
         self.system_label.grid(row=0, column=1, columnspan=2, padx=(10, 5), pady=10, sticky="w")
 
-        # Time label to display the current time next to the system label
+        # Time label to display the current time and date next to the system label
         self.time_label = tk.Label(self.root, font=('Arial', 20, 'bold'), bg="#d9eaf5", bd=2, relief="solid", anchor="e")
         self.time_label.grid(row=0, column=2, padx=(0, 10), pady=10, sticky="e")
         self.update_time_label()
@@ -65,14 +63,17 @@ class RFIDLogSystem:
         self.profile_info_frame.pack(pady=10)
 
         # Label to display current user
-        self.current_user_label = tk.Label(self.profile_info_frame, text="Current User", font=('Arial', 16, 'italic'), bg="#cfe2f3")
+        self.current_user_label = tk.Label(self.profile_info_frame, text="Current User", font=('Arial', 25,), bg="#cfe2f3")
         self.current_user_label.grid(row=0, column=0, padx=10)
 
+        # Placeholder for profile picture
+        self.load_profile_picture()
+
         # Labels for displaying the current user's profile (name and department)
-        self.profile_name_label = tk.Label(self.profile_info_frame, text="Name: ", font=('Arial', 16), bg="#cfe2f3", width=20, anchor="w")
-        self.profile_name_label.grid(row=1, column=0, padx=10)
-        self.profile_dept_label = tk.Label(self.profile_info_frame, text="Department: ", font=('Arial', 16), bg="#cfe2f3", width=20, anchor="w")
-        self.profile_dept_label.grid(row=2, column=0, padx=10)
+        self.profile_name_label = tk.Label(self.profile_info_frame, text="Name: ", font=('Arial', 20), bg="#cfe2f3", width=20, anchor="w")
+        self.profile_name_label.grid(row=2, column=0, padx=10)
+        self.profile_dept_label = tk.Label(self.profile_info_frame, text="Department: ", font=('Arial', 20), bg="#cfe2f3", width=20, anchor="w")
+        self.profile_dept_label.grid(row=3, column=0, padx=10)
 
         # Logs Section (Center and Right side)
         self.logs_frame = tk.Frame(self.root, width=706, height=120, bg="red", bd=2, relief="solid")
@@ -80,7 +81,7 @@ class RFIDLogSystem:
 
         # Treeview style customization
         self.style = ttk.Style()
-        self.style.configure("Treeview", font=('Arial', 17), padding=(5, 5), rowheight=50)
+        self.style.configure("Treeview", font=('Arial', 17), padding=(5, 5), rowheight=55)
         self.style.configure("Treeview.Heading", font=('Arial', 20, 'bold'))
 
         # Treeview to display logs (Time In and Time Out)
@@ -102,13 +103,31 @@ class RFIDLogSystem:
         self.serial_thread = threading.Thread(target=self.read_serial_data, daemon=True)
         self.serial_thread.start()
         self.update_logs()
-        
+
+    def load_logo(self):
+        # Load and resize the logo image
+        image = Image.open("logo.png")
+        image = image.resize((200, 150), Image.LANCZOS)
+        self.logo_image = ImageTk.PhotoImage(image)
+
+        # Display logo on the top-left corner
+        logo_label = tk.Label(self.root, image=self.logo_image, bg="#f0f0f0")
+        logo_label.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+    def load_profile_picture(self):
+        # Load a placeholder profile picture
+        placeholder_image = Image.open("placeholder.png")  # Replace "placeholder.png" with the path to your placeholder image
+        placeholder_image = placeholder_image.resize((300, 260), Image.LANCZOS)
+        self.profile_picture = ImageTk.PhotoImage(placeholder_image)
+
+        # Profile picture label below "Current User"
+        self.profile_picture_label = tk.Label(self.profile_info_frame, image=self.profile_picture, bg="#cfe2f3")
+        self.profile_picture_label.grid(row=1, column=0, pady=(10, 10))
+
     def update_time_label(self):
-        # Get the current time
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Update the time label text
-        self.time_label.config(text=current_time)
-        # Schedule this function to run again after 1 second
+        current_time = time.strftime("%H:%M:%S")
+        current_date = time.strftime("%A, %B %d, %Y")
+        self.time_label.config(text=f"{current_date}\n{current_time}")
         self.root.after(1000, self.update_time_label)
 
     def update_logs(self):
