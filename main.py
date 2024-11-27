@@ -7,6 +7,8 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 import threading
 import time
+import firebase_admin
+from firebase_admin import credentials, db
 
 class RFIDLogSystem:
     def __init__(self):
@@ -16,12 +18,22 @@ class RFIDLogSystem:
             user="root",
             password="micopogi",
             database="RFID_System"
-        )
+        )   
         self.cursor = self.db.cursor()
         self.first_timein = None
-
+        self.firebase_json_path = "firebase.json"  # Path to your Firebase credentials file
+        self.firebase_db_url = "https://thesis-86ff4-default-rtdb.firebaseio.com/"
+        self.status_ref_path = "/status/electricity"  # Firebase reference path for status
         # Set up the serial connection
-        self.ser = serial.Serial("COM4", baudrate=115200, timeout=1)
+        
+        # Firebase setup
+        
+        self.firebase_cred = credentials.Certificate(self.firebase_json_path)
+        firebase_admin.initialize_app(self.firebase_cred, {'databaseURL': self.firebase_db_url})
+        self.status_ref = db.reference(self.status_ref_path)
+        self.last_status = None
+            
+        self.esp32 = serial.Serial("COM4", baudrate=115200, timeout=1)
 
         # Regular expression patterns
         self.hex_pattern = re.compile(r"Received Hex Code: ([0-9a-fA-F]+)")
@@ -103,6 +115,9 @@ class RFIDLogSystem:
         self.serial_thread = threading.Thread(target=self.read_serial_data, daemon=True)
         self.serial_thread.start()
         self.update_logs()
+        self.monitor_thread = threading.Thread(target=self.monitor_and_control)
+        self.monitor_thread.daemon = True  # Ensures the thread will exit when the main program ends
+        self.monitor_thread.start()
 
     def load_logo(self):
         # Load and resize the logo image
@@ -131,7 +146,8 @@ class RFIDLogSystem:
         self.root.after(1000, self.update_time_label)
 
     def update_logs(self):
-         # Query to fetch logs
+        """Fetch and display the latest 11 logs in the TreeView with privacy-masked names."""
+        # Query to fetch logs
         self.cursor.execute("""
             SELECT l.name, l.timein, l.timeout, u.department 
             FROM LabA_logs l
@@ -148,16 +164,21 @@ class RFIDLogSystem:
         # Insert each log entry into the TreeView and apply zebra striping
         for i, row in enumerate(logs):
             if len(row) == 4:  # Ensure there are exactly 4 elements in the row
+                masked_name = self.mask_name(row[0])  # Mask the name for privacy
                 tag = "even" if i % 2 == 0 else "odd"  # Apply 'even' or 'odd' tag for zebra striping
-                self.tree.insert('', 'end', values=(row[0], row[3], row[1], row[2]), tags=(tag,))  # Insert name, department, timein, timeout into the tree
+                self.tree.insert('', 'end', values=(masked_name, row[3], row[1], row[2]), tags=(tag,))  # Insert name, department, timein, timeout into the tree
 
         # Configure zebra striping
         self.tree.tag_configure("even", background="#f0f0f0")  # Light color for even rows
-        self.tree.tag_configure("odd", background="#ffffff")   # White color for odd rows
+        self.tree.tag_configure("odd", background="#ffffff")
 
     def add_log_entry(self, name):
+        """Add a time-in or time-out entry to the log."""
         # Get current time
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Mask the name for privacy
+        masked_name = self.mask_name(name)
 
         # Check if the user has a time-in record that is not closed (no timeout)
         self.cursor.execute("SELECT id FROM LabA_logs WHERE name = %s AND timeout IS NULL", (name,))
@@ -181,7 +202,7 @@ class RFIDLogSystem:
                 # Update labels with the new user's information
                 self.cursor.execute("SELECT department FROM users WHERE name = %s", (name,))
                 department = self.cursor.fetchone()[0]
-                self.profile_name_label.config(text=f"Name: {name}")
+                self.profile_name_label.config(text=f"Name: {masked_name}")  # Use masked name
                 self.profile_dept_label.config(text=f"Department: {department}")
                 # Set `first_timein` to this user's name to prevent another time-in
                 self.first_timein = name
@@ -191,10 +212,28 @@ class RFIDLogSystem:
 
         # Refresh the TreeView to show all logs
         self.update_logs()
+        
+    def mask_name(self, name):
+        """Masks a name by showing the first two characters and the last letter, replacing the middle part with asterisks."""
+        name_parts = name.split(" ")  # Split the name by spaces (for first and last name)
+
+        masked_name_parts = []
+        for part in name_parts:
+            if len(part) > 2:  # Mask only if the part has more than 2 characters
+                # Mask the middle characters, keeping the first 2 and last character intact
+                middle_length = len(part) - 3  # Subtract 2 for the first and last character
+                masked_name = part[:2] + '•' * middle_length + part[-1]
+                masked_name_parts.append(masked_name)
+            else:
+                # Keep short names (like "Jo") as they are
+                masked_name_parts.append(part)
+
+        return " ".join(masked_name_parts)
+
 
     def read_serial_data(self):
         while True:
-            line = self.ser.readline().decode("utf-8").strip()
+            line = self.esp32.readline().decode("utf-8").strip()
 
             if line:
                 print(f"Serial Output: {line}")  # Print all serial output
@@ -227,10 +266,35 @@ class RFIDLogSystem:
                         self.add_log_entry(name)
                     else:
                         print("Hex code not found in the database.")
+                        
+    def monitor_and_control(self):
+        """Combined function to monitor Firebase and send commands to ESP32."""
+        while True:
+            try:
+                # Fetch the current status from Firebase
+                current_status = self.status_ref.get()
 
+                # Check if the status has changed
+                if current_status != self.last_status:
+                    if current_status == "on":
+                        self.esp32.write(('on' + '\n').encode())
+                        print(f"Sent to ESP32: on")
+                    elif current_status == "off":
+                        self.esp32.write(('off' + '\n').encode())
+                        print(f"Sent to ESP32: off")
+
+                    # Update the last status
+                    self.last_status = current_status
+
+                time.sleep(1)  # Delay before checking again
+            except Exception as e:
+                print(f"Error in monitor_and_control: {e}")
+                time.sleep(1)  # Retry delay in case of error
+                
     def run(self):
         # Run the Tkinter event loop
         self.root.mainloop()
+        
 
 
 # Run the application
