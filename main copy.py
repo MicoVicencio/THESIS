@@ -9,9 +9,9 @@ import threading
 import time
 import firebase_admin
 from firebase_admin import credentials, db
-
+from sms import ADBHandler
 import calendar
-from emailSender import EmailHandler
+
 
 class RFIDLogSystem:
     def __init__(self):
@@ -221,9 +221,7 @@ class RFIDLogSystem:
             message = f"Good day {name}, You entered the laboratory on {day_of_week}, {month_name} {day}, {year} at {time}"
         elif do == "timeout":
             message = f"Good day {name}, You left the laboratory on {day_of_week}, {month_name} {day}, {year} at {time}"
-        else:
-             message = f"Good day {name}, This Email is to remind you to turn off the electricity on {day_of_week}, {month_name} {day}, {year} at {time}"
-            
+    
         return message
     
         
@@ -249,13 +247,13 @@ class RFIDLogSystem:
             self.profile_name_label.config(text="Name: None")  # Clear the current user after timeout
             # Reset `first_timein` to allow new time-ins after timeout
             
-            self.cursor.execute("SELECT email FROM users WHERE name = %s", (name,))
-            email = self.cursor.fetchone()
+            self.cursor.execute("SELECT phone_number FROM users WHERE name = %s", (name,))
+            phone_number = self.cursor.fetchone()
+            self.adb_handler.open_google_messages()
+            time.sleep(3)
+            phone_number_sms = phone_number[0]
             message = self.generate_message(name,"timeout")
-            email_handler = EmailHandler(email, message)
-            email_handler.send()
-            
-            
+            self.adb_handler.send_message(phone_number_sms,message)
                 
             self.first_timein = None
         else:
@@ -267,12 +265,13 @@ class RFIDLogSystem:
                 # Update labels with the new user's information
                 self.cursor.execute("SELECT department FROM users WHERE name = %s", (name,))
                 department = self.cursor.fetchone()[0]
-                
-                self.cursor.execute("SELECT email FROM users WHERE name = %s", (name,))
-                email = self.cursor.fetchone()
+                self.cursor.execute("SELECT phone_number FROM users WHERE name = %s", (name,))
+                phone_number = self.cursor.fetchone()
+                self.adb_handler.open_google_messages()
+                time.sleep(1)
+                phone_number_sms = phone_number[0]
                 message = self.generate_message(name,"timein")
-                email_handler = EmailHandler(email, message)
-                email_handler.send()
+                self.adb_handler.send_message(phone_number_sms,message)
                 
                 
                 self.profile_name_label.config(text=f"Name: {masked_name}")  # Use masked name
